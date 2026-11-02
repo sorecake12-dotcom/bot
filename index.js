@@ -1,5 +1,8 @@
 "use strict";
 
+const dns = require("dns");
+try { dns.setDefaultResultOrder("ipv4first"); } catch (_) {}
+
 const { addLog, getLogs } = require("./logger");
 const mineflayer = require("mineflayer");
 const { Movements, pathfinder, goals } = require("mineflayer-pathfinder");
@@ -1610,10 +1613,14 @@ function createBot() {
       if (
         reasonStr.includes("throttl") ||
         reasonStr.includes("wait before reconnect") ||
-        reasonStr.includes("too fast")
+        reasonStr.includes("too fast") ||
+        reasonStr.includes("queued to start") ||
+        reasonStr.includes("rejoin shortly") ||
+        reasonStr.includes("server is starting") ||
+        reasonStr.includes("offline")
       ) {
         addLog(
-          "[Bot] Throttle kick detected - will use extended reconnect delay",
+          "[Bot] Throttle/Queue kick detected - will use extended reconnect delay",
         );
         botState.wasThrottled = true;
       }
@@ -1692,51 +1699,54 @@ function scheduleReconnect() {
 function initializeModules(bot, mcData, defaultMove) {
   addLog("[Modules] Initializing all modules...");
 
-  // ---------- AUTO AUTH (REACTIVE) ----------
+  // ---------- AUTO AUTH (REACTIVE & PROACTIVE) ----------
   if (config.utils["auto-auth"] && config.utils["auto-auth"].enabled) {
     const password = config.utils["auto-auth"].password;
-    let authHandled = false;
+    let authDone = false;
 
-    const tryAuth = (type) => {
-      if (authHandled || !bot || !botState.connected) return;
-      authHandled = true;
-      if (type === "register") {
-        bot.chat(`/register ${password} ${password}`);
-        addLog("[Auth] Detected register prompt - sent /register");
-      } else {
-        bot.chat(`/login ${password}`);
-        addLog("[Auth] Detected login prompt - sent /login");
+    const sendAuth = (action) => {
+      if (!bot || !botState.connected) return;
+      try {
+        if (action === "register") {
+          bot.chat(`/register ${password} ${password}`);
+          addLog("[Auth] Sent /register command");
+        } else if (action === "login") {
+          bot.chat(`/login ${password}`);
+          addLog("[Auth] Sent /login command");
+        }
+      } catch (err) {
+        addLog(`[Auth] Error sending auth: ${err.message}`);
       }
     };
 
-    bot.on("messagestr", (message) => {
-      if (authHandled) return;
-      const msg = message.toLowerCase();
-      if (
-        msg.includes("/register") ||
-        msg.includes("register ") ||
-        msg.includes("지정된 비밀번호")
-      ) {
-        tryAuth("register");
-      } else if (
-        msg.includes("/login") ||
-        msg.includes("login ") ||
-        msg.includes("로그인")
-      ) {
-        tryAuth("login");
+    const handlePrompt = (text) => {
+      if (authDone || !text) return;
+      const lower = String(text).toLowerCase();
+      if (lower.includes("/register") || lower.includes("register ") || lower.includes("sign up")) {
+        authDone = true;
+        sendAuth("register");
+      } else if (lower.includes("/login") || lower.includes("login ") || lower.includes("sign in")) {
+        authDone = true;
+        sendAuth("login");
       }
-    });
+    };
 
-    // Failsafe: if no prompt after 10s, try login anyway
+    bot.on("messagestr", handlePrompt);
+    bot.on("title", handlePrompt);
+    bot.on("actionBar", handlePrompt);
+
+    // Immediate attempt on spawn: send both /register then /login to beat 30s timeout
     setTimeout(() => {
-      if (!authHandled && bot && botState.connected) {
-        addLog(
-          "[Auth] No prompt detected after 10s, sending /login as failsafe",
-        );
-        bot.chat(`/login ${password}`);
-        authHandled = true;
+      if (!authDone && bot && botState.connected) {
+        sendAuth("register");
       }
-    }, 10000);
+    }, 1500);
+
+    setTimeout(() => {
+      if (!authDone && bot && botState.connected) {
+        sendAuth("login");
+      }
+    }, 3500);
   }
 
   // ---------- CHAT MESSAGES ----------
