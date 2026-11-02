@@ -1287,12 +1287,7 @@ app.post("/stop", (req, res) => {
   if (!botRunning) return res.json({ success: false, msg: "Already stopped" });
 
   botRunning = false;
-
-  if (bot) {
-    bot.end();
-    bot = null;
-  }
-
+  destroyBot();
   clearAllIntervals();
   addLog("[Control] Bot stopped");
 
@@ -1482,6 +1477,22 @@ function getReconnectDelay() {
   return delay + jitter;
 }
 
+function destroyBot() {
+  if (!bot) return;
+  try {
+    if (bot._client && bot._client.socket) {
+      bot._client.socket.destroy();
+    }
+  } catch (_) {}
+  try {
+    bot.removeAllListeners();
+    bot.end();
+  } catch (e) {
+    addLog(`[Cleanup] Error ending previous bot: ${e.message}`);
+  }
+  bot = null;
+}
+
 function createBot() {
   if (isReconnecting) {
     addLog("[Bot] Already reconnecting, skipping...");
@@ -1489,16 +1500,8 @@ function createBot() {
   }
 
   // Cleanup previous bot properly to avoid ghost bots
-  if (bot) {
-    clearAllIntervals();
-    try {
-      bot.removeAllListeners();
-      bot.end();
-    } catch (e) {
-      addLog("[Cleanup] Error ending previous bot:", e.message);
-    }
-    bot = null;
-  }
+  clearAllIntervals();
+  destroyBot();
 
   addLog(`[Bot] Creating bot instance...`);
   addLog(`[Bot] Connecting to ${config.server.ip}:${config.server.port}`);
@@ -1528,13 +1531,7 @@ function createBot() {
     connectionTimeoutId = setTimeout(() => {
       if (!botState.connected) {
         addLog("[Bot] Connection timeout - no spawn received");
-        try {
-          bot.removeAllListeners();
-          bot.end();
-        } catch (e) {
-          /* ignore */
-        }
-        bot = null;
+        destroyBot();
         scheduleReconnect();
       }
     }, 150000); // 150s - Aternos servers can take 90-120s to finish spawning a player
@@ -2303,6 +2300,7 @@ process.on("uncaughtException", (err) => {
 
   // ALWAYS recover — bot must never stay disconnected
   clearAllIntervals();
+  destroyBot();
   botState.connected = false;
 
   // FIX: reset isReconnecting if it was stuck, then schedule reconnect
@@ -2345,11 +2343,8 @@ process.on("unhandledRejection", (reason) => {
   if (isNetworkError && !isReconnecting) {
     addLog("[FATAL] Network rejection — triggering reconnect...");
     clearAllIntervals();
+    destroyBot();
     botState.connected = false;
-    if (bot) {
-      try { bot.end(); } catch (_) {}
-      bot = null;
-    }
     scheduleReconnect();
   }
 });
