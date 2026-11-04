@@ -1591,7 +1591,18 @@ function createBot() {
       defaultMove.liquidCost = 1000;
       defaultMove.fallDamageCost = 1000;
 
+      // FIX: Freeze physics on spawn until authentication finishes
+      // Prevents LoginMe/Paper kicking with "Invalid move player packet received"
+      bot.physicsEnabled = false;
+
       initializeModules(bot, mcData, defaultMove);
+
+      setTimeout(() => {
+        if (bot && botState.connected) {
+          bot.physicsEnabled = true;
+          addLog("[Bot] Physics unfreezed after authentication.");
+        }
+      }, 3500);
 
       // Attempt creative mode (only works if bot has OP and enabled in settings)
       setTimeout(() => {
@@ -1729,7 +1740,8 @@ function initializeModules(bot, mcData, defaultMove) {
   // ---------- AUTO AUTH (REACTIVE & PROACTIVE) ----------
   if (config.utils["auto-auth"] && config.utils["auto-auth"].enabled) {
     const password = config.utils["auto-auth"].password;
-    let authDone = false;
+    let registered = false;
+    let loggedIn = false;
 
     const sendAuth = (action) => {
       if (!bot || !botState.connected) return;
@@ -1747,14 +1759,19 @@ function initializeModules(bot, mcData, defaultMove) {
     };
 
     const handlePrompt = (text) => {
-      if (authDone || !text) return;
+      if (!text || (registered && loggedIn)) return;
       const lower = String(text).toLowerCase();
       if (lower.includes("/register") || lower.includes("register ") || lower.includes("sign up")) {
-        authDone = true;
         sendAuth("register");
+        registered = true;
+        // Server requires /login immediately after /register
+        setTimeout(() => {
+          sendAuth("login");
+          loggedIn = true;
+        }, 250);
       } else if (lower.includes("/login") || lower.includes("login ") || lower.includes("sign in")) {
-        authDone = true;
         sendAuth("login");
+        loggedIn = true;
       }
     };
 
@@ -1762,18 +1779,24 @@ function initializeModules(bot, mcData, defaultMove) {
     bot.on("title", handlePrompt);
     bot.on("actionBar", handlePrompt);
 
-    // Immediate attempt on spawn: send both /register then /login to beat 30s timeout
+    // Immediate attempt on spawn: send /register then /login immediately within 350ms
     setTimeout(() => {
-      if (!authDone && bot && botState.connected) {
+      if (bot && botState.connected) {
         sendAuth("register");
+        setTimeout(() => {
+          if (bot && botState.connected) {
+            sendAuth("login");
+          }
+        }, 250);
       }
-    }, 1500);
+    }, 100);
 
+    // Backup retry after 1.8s
     setTimeout(() => {
-      if (!authDone && bot && botState.connected) {
+      if (bot && botState.connected && !loggedIn) {
         sendAuth("login");
       }
-    }, 3500);
+    }, 1800);
   }
 
   // ---------- CHAT MESSAGES ----------
