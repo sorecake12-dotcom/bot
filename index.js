@@ -1808,11 +1808,14 @@ function initializeModules(bot, mcData, defaultMove) {
       config.movement["circle-walk"].enabled
     )
   ) {
-    bot.pathfinder.setMovements(defaultMove);
-    bot.pathfinder.setGoal(
-      new GoalBlock(config.position.x, config.position.y, config.position.z),
-    );
-    addLog("[Position] Navigating to configured position...");
+    setTimeout(() => {
+      if (!bot || !botState.connected) return;
+      bot.pathfinder.setMovements(defaultMove);
+      bot.pathfinder.setGoal(
+        new GoalBlock(config.position.x, config.position.y, config.position.z),
+      );
+      addLog("[Position] Navigating to configured position...");
+    }, 5000);
   }
 
   // ---------- ANTI-AFK ----------
@@ -1907,41 +1910,43 @@ function initializeModules(bot, mcData, defaultMove) {
     }
 
     if (config.utils["anti-afk"].sneak) {
-      try {
-        if (typeof bot.setControlState === "function")
-          bot.setControlState("sneak", true);
-      } catch (e) {}
+      setTimeout(() => {
+        try {
+          if (bot && botState.connected && typeof bot.setControlState === "function")
+            bot.setControlState("sneak", true);
+        } catch (e) {}
+      }, 3000);
     }
   }
 
   // ---------- MOVEMENT MODULES ----------
-  // FIX: check top-level movement.enabled flag
-  if (config.movement && config.movement.enabled !== false) {
-    // FIX: circle-walk and random-jump both jump - only run one jumping mechanism
-    // random-jump is skipped if anti-afk jump is handled elsewhere; we only use random-jump here
-    if (
-      config.movement["circle-walk"] &&
-      config.movement["circle-walk"].enabled
-    ) {
-      startCircleWalk(bot, defaultMove);
+  // FIX: wait 4s after spawn so login plugin authenticates before bot moves
+  setTimeout(() => {
+    if (!bot || !botState.connected) return;
+    if (config.movement && config.movement.enabled !== false) {
+      if (
+        config.movement["circle-walk"] &&
+        config.movement["circle-walk"].enabled
+      ) {
+        startCircleWalk(bot, defaultMove);
+      }
+      if (
+        config.movement["random-jump"] &&
+        config.movement["random-jump"].enabled &&
+        !(
+          config.movement["circle-walk"] && config.movement["circle-walk"].enabled
+        )
+      ) {
+        startRandomJump(bot);
+      }
+      if (
+        config.movement["look-around"] &&
+        config.movement["look-around"].enabled
+      ) {
+        startLookAround(bot);
+      }
     }
-    // FIX: only run random-jump if circle-walk is NOT running (circle-walk also keeps bot moving)
-    if (
-      config.movement["random-jump"] &&
-      config.movement["random-jump"].enabled &&
-      !(
-        config.movement["circle-walk"] && config.movement["circle-walk"].enabled
-      )
-    ) {
-      startRandomJump(bot);
-    }
-    if (
-      config.movement["look-around"] &&
-      config.movement["look-around"].enabled
-    ) {
-      startLookAround(bot);
-    }
-  }
+  }, 4000);
 
   // ---------- CUSTOM MODULES ----------
   // FIX: avoidMobs AND combatModule conflict - if combat is enabled, don't run avoidMobs at the same time
