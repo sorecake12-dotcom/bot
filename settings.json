@@ -8,7 +8,7 @@
   "server": {
     "ip": "nothingsomething.mcsh.gg",
     "port": 25565,
-    "version": "1.21.4",
+    "version": false,
     "try-creative": false
   },
   "position": {

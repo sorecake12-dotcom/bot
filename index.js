@@ -669,13 +669,13 @@ app.get("/tutorial", (req, res) => {
           <div class="step-card">
             <div class="step-header">
               <div class="step-number">1</div>
-              <h2 class="step-title">Configure Aternos</h2>
+              <h2 class="step-title">Configure Server</h2>
             </div>
             <ol>
-              <li>Go to <strong>Aternos</strong> and open your server panel.</li>
-              <li>Install <strong>Paper/Bukkit</strong> as your server software.</li>
-              <li>Enable <strong>Cracked</strong> mode using the switch.</li>
-              <li>Install plugins: <code>ViaVersion</code>, <code>ViaBackwards</code>, <code>ViaRewind</code></li>
+              <li>Open your server control panel (MCServerHost, Paper, Purpur, VPS).</li>
+              <li>Enable <strong>Cracked / Offline mode</strong> (<code>online-mode=false</code>) so the bot can join.</li>
+              <li>Keep plugins updated (<code>ViaVersion</code>, <code>ViaBackwards</code>) to avoid protocol remap bugs.</li>
+              <li>Copy your server address and Java port (e.g. <code>nothingsomething.mcsh.gg:25565</code>).</li>
             </ol>
           </div>
 
@@ -687,7 +687,8 @@ app.get("/tutorial", (req, res) => {
             <ol>
               <li>Open <code>settings.json</code> in this project folder.</li>
               <li>Set your Minecraft server IP and port.</li>
-              <li>Customize bot name, passwords, and modules.</li>
+              <li>Set <code>"version": false</code> for auto-detection or specify your server version.</li>
+              <li>Customize bot username, auto-auth password, anti-AFK, and chat modules.</li>
             </ol>
           </div>
 
@@ -697,10 +698,10 @@ app.get("/tutorial", (req, res) => {
               <h2 class="step-title">24/7 Cloud Hosting</h2>
             </div>
             <ol>
-              <li>Deploy to Render, Replit, or a VPS.</li>
-              <li>Set start command to <code>npm start</code>.</li>
-              <li>Access the live dashboard from anywhere in your browser.</li>
-              <li>Automated keepalive prevents sleeping.</li>
+              <li>Run 24/7 on <strong>Render, Replit, or a VPS</strong> with persistent background processes.</li>
+              <li>Set build command to <code>npm install</code> and start command to <code>npm start</code>.</li>
+              <li>Note: Serverless platforms like Vercel freeze background TCP sockets and cannot keep bots online.</li>
+              <li>Use the web dashboard and terminal console to monitor uptime in real time.</li>
             </ol>
           </div>
 
@@ -1083,22 +1084,6 @@ app.get("/logs", (req, res) => {
           <footer>
             <p>AFK Bot Console &bull; ${config.name}</p>
           </footer>
-                  autocomplete="off"
-                  spellcheck="false"
-                >
-                <button id="console-send" class="console-send">Send</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="refresh-bar">
-            <span class="refresh-dot"></span>
-            <span id="refresh-label">Auto-refreshing every 5 seconds</span>
-          </div>
-
-          <footer>
-            <p>AFK Bot Dashboard &middot; ${config.name}</p>
-          </footer>
         </main>
 
         <script>
@@ -1277,9 +1262,11 @@ app.get("/logs", (req, res) => {
 let botRunning = true;
 
 app.post("/start", (req, res) => {
-  if (botRunning) return res.json({ success: false, msg: "Already running" });
+  if (botRunning && (bot || isReconnecting)) return res.json({ success: false, msg: "Already running" });
 
   botRunning = true;
+  isReconnecting = false;
+  clearBotTimeouts();
   createBot();
   addLog("[Control] Bot started");
 
@@ -1290,9 +1277,12 @@ app.post("/stop", (req, res) => {
   if (!botRunning) return res.json({ success: false, msg: "Already stopped" });
 
   botRunning = false;
-  destroyBot();
+  isReconnecting = false;
+  clearBotTimeouts();
   clearAllIntervals();
-  addLog("[Control] Bot stopped");
+  destroyBot();
+  botState.connected = false;
+  addLog("[Control] Bot stopped by user");
 
   res.json({ success: true });
 });
@@ -1335,10 +1325,16 @@ app.post("/command", express.json(), (req, res) => {
     return res.json({ success: true, msg });
   }
 
-  if (!bot || typeof bot.chat !== "function") {
+  if (
+    !bot ||
+    !botState.connected ||
+    typeof bot.chat !== "function" ||
+    !bot._client ||
+    typeof bot._client.chat !== "function"
+  ) {
     const msg = bot
-      ? "Bot is still connecting — try again in a moment."
-      : "Bot is not running.";
+      ? "Bot is still connecting — wait until spawned."
+      : "Bot is not running. Start it first.";
     addLog(`[Console] ${msg}`);
     return res.json({ success: false, msg });
   }
@@ -1497,6 +1493,11 @@ function destroyBot() {
 }
 
 function createBot() {
+  if (!botRunning) {
+    addLog("[Bot] Bot is stopped — skipping createBot.");
+    return;
+  }
+
   if (isReconnecting) {
     addLog("[Bot] Already reconnecting, skipping...");
     return;
@@ -1513,8 +1514,8 @@ function createBot() {
     // FIX: use version:false to auto-detect server version so the bot can join any server.
     // If the user explicitly sets a version in settings.json it is still respected.
     const botVersion =
-      config.server.version && config.server.version.trim() !== ""
-        ? config.server.version
+      typeof config.server.version === "string" && config.server.version.trim() !== ""
+        ? config.server.version.trim()
         : false;
     bot = mineflayer.createBot({
       username: config["bot-account"].username,
@@ -1692,6 +1693,16 @@ function createBot() {
 
 function scheduleReconnect() {
   clearBotTimeouts();
+
+  if (!botRunning) {
+    addLog("[Bot] Bot is stopped — skipping reconnect.");
+    return;
+  }
+
+  if (!config.utils["auto-reconnect"]) {
+    addLog("[Bot] Auto-reconnect disabled — skipping reconnect.");
+    return;
+  }
 
   // FIX: don't stack reconnect if already waiting
   if (isReconnecting) {
@@ -2396,7 +2407,7 @@ addLog("=".repeat(50));
 addLog("  Minecraft AFK Bot v2.5 - Bug-Fixed Edition");
 addLog("=".repeat(50));
 addLog(`Server: ${config.server.ip}:${config.server.port}`);
-addLog(`Version: ${config.server.version}`);
+addLog(`Version: ${config.server.version || "Auto-detect"}`);
 addLog(
   `Auto-Reconnect: ${config.utils["auto-reconnect"] ? "Enabled" : "Disabled"}`,
 );
