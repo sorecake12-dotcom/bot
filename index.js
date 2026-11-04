@@ -1527,6 +1527,27 @@ function createBot() {
       checkTimeoutInterval: 600000,
     });
 
+    // FIX: 1.21.x configuration phase - auto-accept server resource pack to prevent 30s timeout kick
+    if (bot._client) {
+      bot._client.on("packet", (data, meta) => {
+        if (meta.name === "add_resource_pack") {
+          try {
+            bot._client.write("resource_pack_receive", { uuid: data.uuid, result: 3 });
+            bot._client.write("resource_pack_receive", { uuid: data.uuid, result: 0 });
+          } catch (_) {}
+        }
+        if (meta.name === "finish_configuration") {
+          try {
+            bot._client.write("finish_configuration", {});
+          } catch (_) {}
+        }
+      });
+    }
+
+    bot.on("resourcePack", () => {
+      try { bot.acceptResourcePack(); } catch (_) {}
+    });
+
     bot.loadPlugin(pathfinder);
 
     // FIX: connection timeout - end the old bot before reconnecting to avoid ghost bots
