@@ -42,7 +42,7 @@
       ]
     },
     "chat-log": true,
-    "auto-reconnect": true,
+    "auto-reconnect": false,
     "auto-reconnect-delay": 15000,
     "max-reconnect-delay": 60000
   },

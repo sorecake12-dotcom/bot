@@ -1259,7 +1259,7 @@ app.get("/logs", (req, res) => {
   `);
 });
 
-let botRunning = true;
+let botRunning = false;
 
 app.post("/start", (req, res) => {
   if (botRunning && (bot || isReconnecting)) return res.json({ success: false, msg: "Already running" });
@@ -2436,4 +2436,8 @@ addLog(
 );
 addLog("=".repeat(50));
 
-createBot();
+if (botRunning) {
+  createBot();
+} else {
+  addLog("[Bot] Bot stopped by default — click Start Bot on web dashboard to connect.");
+}
