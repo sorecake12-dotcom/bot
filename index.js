@@ -1537,11 +1537,6 @@ function createBot() {
             bot._client.write("resource_pack_receive", { uuid: data.uuid, result: 0 });
           } catch (_) {}
         }
-        if (meta.name === "finish_configuration") {
-          try {
-            bot._client.write("finish_configuration", {});
-          } catch (_) {}
-        }
       });
     }
 
